@@ -1,0 +1,24 @@
+﻿@model BigDataProject.Models.DocumentSummaryData
+@{
+    ViewData["Title"] = "DocumentSummary";
+}
+
+<br />
+<br />
+<br />
+
+@if(Model.Id > 0)
+{
+    <div class="row">
+        <div class="col-md-12">
+            <h4>@Model.Title</h4>
+            <a class="btn btn-success" href="@Url.Action("DownloadFile", new { fileId = Model.Id})" target="_blank">Download</a>
+        </div>
+    </div>
+}
+
+<div class="row">
+    <div class="col-md-12" style="white-space: pre-line;">
+        @Model.Text
+    </div>
+</div>
