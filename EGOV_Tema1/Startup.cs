@@ -66,6 +66,7 @@ namespace BigDataProject
             app.UseCookiePolicy();
 
             // ===== Create tables ======
+            //dbContext.Database.EnsureDeleted();
             dbContext.Database.EnsureCreated();
 
             app.UseMvc(routes =>

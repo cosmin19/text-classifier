@@ -2,18 +2,20 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using BigDataProject.Models;
 using BigDataProject.Services;
-using BigDataProject.Entities.UserForm;
-using System.Xml.Linq;
 
 using System.IO;
 using Microsoft.AspNetCore.Http;
 using iTextSharp.text.pdf;
 using iTextSharp.text.pdf.parser;
 using Microsoft.Office.Interop.Word;
+using OpenTextSummarizer;
+using System.Net.Http;
+using System.Text;
+using Newtonsoft.Json;
+using System.Configuration;
 
 namespace BigDataProject.Controllers
 {
@@ -57,9 +59,10 @@ namespace BigDataProject.Controllers
             {
                 if (formFile.Length > 0)
                 {
-
+                    // Read from file
                     using (var stream = new MemoryStream())
                     {
+                        //Prepare file to Db
                         formFile.CopyTo(stream);
                         Entities.UserForm.Document entity = new Entities.UserForm.Document()
                         {
@@ -70,14 +73,33 @@ namespace BigDataProject.Controllers
                             CreatedOnUtc = DateTime.Now
                         };
 
+                        // Read text from file
+                        string fullText = ReadText(ext, entity.Stream, formFile.ContentType);
+
+                        // Summarize text
+                        string textSummary = SummarizeText(fullText);
+
+                        // Get summary classification
+                        string classification = GetClassification(textSummary);
+
+                        // Save file to db
+                        entity.Summary = textSummary;
+                        entity.Classification = classification;
                         _documentService.Create(entity);
 
-                        var result = ReadText(ext, entity.Stream, formFile.ContentType);
+                        // Transform json into an object
+                        var classificationObjResult = JsonConvert.DeserializeObject<ClassificationDto[]>(classification)[0];
+
+                        // Create Dto Response for View
                         var dto = new DocumentSummaryData()
                         {
                             Id = entity.Id,
-                            Text = result,
-                            Title = entity.Title
+                            Summary = textSummary,
+                            Title = entity.Title,
+                            Classification = classificationObjResult.Classification
+                                                        .OrderByDescending(c => c.P)
+                                                        .Select(t => string.Format(t.ClassName + ": " + "{0:0.0%}", t.P))
+                                                        .ToArray()
                         };
                         return View("DocumentSummary", dto);
                     }
@@ -101,16 +123,20 @@ namespace BigDataProject.Controllers
             if (doc == null)
                 return RedirectToAction(nameof(Index));
 
-            var ext = System.IO.Path.GetExtension(doc.Title).ToLower();
-            var result = ReadText(ext, doc.Stream, doc.ContentType);
+            // Transform json into an object
+            var classificationObjResult = JsonConvert.DeserializeObject<ClassificationDto[]>(doc.Classification)[0];
 
+            // Create Dto Response for View
             var dto = new DocumentSummaryData()
             {
                 Id = doc.Id,
-                Text = result,
-                Title = doc.Title
+                Summary = doc.Summary,
+                Title = doc.Title,
+                Classification = classificationObjResult.Classification
+                                                        .OrderByDescending(c => c.P)
+                                                        .Select(t => string.Format(t.ClassName + ": " + "{0:0.0%}", t.P))
+                                                        .ToArray()
             };
-
             return View("DocumentSummary", dto);
         }
 
@@ -134,13 +160,13 @@ namespace BigDataProject.Controllers
             var dto = new DocumentSummaryData()
             {
                 Id = 0,
-                Text = "No result.",
-                Title = ""
+                Summary = "No result.",
+                Title = "",
+                Classification = new string[] { }
             };
 
             return View(dto);
         }
-
         #endregion
 
         #region Utils
@@ -186,7 +212,7 @@ namespace BigDataProject.Controllers
                     }
                 }
             }
-            catch (Exception e)
+            catch (Exception)
             {
                 return line;
             }
@@ -218,13 +244,11 @@ namespace BigDataProject.Controllers
                 document.Close();
                 application.Quit();
             }
-            catch (Exception e)
+            catch (Exception)
             {
                 if (document != null) document.Close();
                 if (application != null) application.Quit();
             }
-
-
 
             return text;
         }
@@ -242,7 +266,68 @@ namespace BigDataProject.Controllers
 
             return "";
         }
+
+        private string SummarizeText(string text)
+        {
+            // Set text summarize arguments
+            SummarizerArguments sumargs = new SummarizerArguments
+            {
+                DictionaryLanguage = "en",
+                DisplayLines = 5,
+                DisplayPercent = 0,
+                InputFile = "",
+                InputString = text
+            };
+
+            // Summarize text
+            SummarizedDocument doc = Summarizer.Summarize(sumargs);
+
+            // Return result
+            return string.Join("\r\n\r\n", doc.Sentences.ToArray());
+        }
+
+        private string GetClassification(string text)
+        {
+            string result = "";
+
+            // Create JSON content
+            var data = new { texts = new[] { text } };
+            var dataString = JsonConvert.SerializeObject(data);
+
+            // Open Http Client
+            using (var client = new HttpClient())
+            {
+                client.BaseAddress = new Uri("https://api.uclassify.com/v1/uclassify/topics/classify/");
+                client.DefaultRequestHeaders.Add("Authorization", "Token hN0yj3t6T0fp");
+
+                // Set content
+                var content = new StringContent(dataString.ToString(), Encoding.UTF8, "application/json");
+
+                // Create request
+                HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, "");
+                request.Content = content;
+
+                // Make request and wait for finish
+                HttpResponseMessage httpResponse = null;
+                var req = client.SendAsync(request)
+                .ContinueWith(response =>
+                {
+                    httpResponse = response.Result;
+                });
+                req.Wait();
+
+                // Read content async and wait for response
+                var reqContent = httpResponse.Content.ReadAsStringAsync().ContinueWith(res => {
+                    result = res.Result;
+                });
+                reqContent.Wait();
+            }
+
+            return result;
+        }
         #endregion
+
+
 
         #region Common
         public IActionResult Privacy()

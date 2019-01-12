@@ -14,6 +14,12 @@ namespace BigDataProject.Entities.UserForm
         public string Title { get; set; }
 
         [Required]
+        public string Summary { get; set; }
+
+        [Required]
+        public string Classification { get; set; }
+
+        [Required]
         public byte[] Stream { get; set; }
 
         [Required]
@@ -24,5 +30,6 @@ namespace BigDataProject.Entities.UserForm
 
         [Required]
         public DateTime CreatedOnUtc { get; set; }
+
     }
 }

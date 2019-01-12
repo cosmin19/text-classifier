@@ -19,6 +19,16 @@
 
 <div class="row">
     <div class="col-md-12" style="white-space: pre-line;">
-        @Model.Text
+        <h3>Summary:</h3>
+        @Model.Summary
+
+        <br>
+        <h3>Classification:</h3>
+        <ul>
+            @foreach (var d in Model.Classification)
+            {
+                <li>@d</li>
+            }
+        </ul>
     </div>
 </div>
