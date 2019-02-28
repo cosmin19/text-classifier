@@ -1,2 +1,2 @@
-# big-data-project
+# Simple text classifier
 Big Data Project
